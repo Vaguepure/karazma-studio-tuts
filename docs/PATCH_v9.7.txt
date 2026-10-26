@@ -1,0 +1,16 @@
+Karazma Studio v9.7 - clean menu + Hamgit-first dual updates (Iran)
+
+- Menu is clean: header "KARAZMA STUDIO v9.7 (SOP 2.5)" then options [1]-[5] and [0].
+  The old v9.1+ / v9.2+ / v9.6 tip banner lines are removed. UI remains English only.
+- [5] Check for update is always on the menu. It compares your local version with the
+  remote app_manifest.json, downloads any changed app files, then auto-restarts in the
+  same console (same behavior as v9.5/v9.6 restart).
+- Dual update sources (ordered):
+  1) Hamgit (Iran-first): https://hamgit.ir/ardavarinia/karazma-studio-tuts/-/raw/main/v9_app/{file}
+  2) GitHub raw: https://raw.githubusercontent.com/Vaguepure/karazma-studio-tuts/main/v9_app/{file}
+  Startup sync and [5] both try Hamgit first, then GitHub, until one succeeds (sha256 verify unchanged).
+- Dual publish: this release is published to BOTH Hamgit and GitHub. Users still on <=9.2
+  (no menu [5], GitHub raw blocked in Iran) get a one-time Drive bootstrap: place the new
+  studio9.py + clap_detect.py + app_manifest.json into the v9_app Drive folder so the next
+  launch picks up 9.7; after that, updates come from Hamgit/GitHub.
+- .assets, ffmpeg zips, and Whisper model fallback still use the existing v9 Drive folder.
