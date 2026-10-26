@@ -1,13 +1,14 @@
 {
- "version": "9.5",
+ "version": "9.6",
  "files": {
   "studio9.py": {
-   "bytes": 78855,
-   "sha256": "5385c2db31050f904b58cfec3e4c327413e9bea8da730b933ad8bfe26082f81a"
+   "bytes": 80616,
+   "sha256": "5787067b58b36faf71f7ac153553a0da1d3f89022d55e92943bd2c9fbee64657"
   },
   "clap_detect.py": {
    "bytes": 6784,
    "sha256": "ae937611ae239c7ccd9ed7f160658e4b975545aa035ad0f2e849aa811d9130e8"
   }
- }
+ },
+ "source": "https://github.com/Vaguepure/karazma-studio-tuts/tree/main/v9_app"
 }

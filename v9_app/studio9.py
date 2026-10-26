@@ -10,7 +10,7 @@ COURSES = os.path.join(ROOT, 'Courses')
 MODELS = os.path.join(APP, 'models'); ASSETS = os.path.join(APP, 'assets')
 CFG = os.path.join(APP, 'config.json'); LOG = os.path.join(APP, 'karazma-studio.log')
 EXE = '.exe' if os.name == 'nt' else ''
-VERSION = '9.5'
+VERSION = '9.6'
 # v9.4 (Arsha 2026-10-26): cut rules - pause > PAUSE_MAX_S is cut, no kept piece shorter than MIN_KEEP_S
 PAUSE_MAX_S = 1.0
 MIN_KEEP_S = 1.0
@@ -57,6 +57,11 @@ def bar(done, total, label):
 
 # ---------- ffmpeg ----------
 V9_DRIVE_ROOT = '1fvAAdI0kUTRnISd5WLC5h2MNnLvgB4Eb'   # karazma-studio-full-operator (anyone with the link): v9's own update / asset / model source
+GH_OWNER = 'Vaguepure'
+GH_REPO = 'karazma-studio-tuts'
+GH_BRANCH = 'main'
+GH_APP_DIR = 'v9_app'   # path inside the repo for operator app files
+# v9.6+: app code updates from public GitHub raw URLs (no token). Drive kept for .assets / ffmpeg / models.
 def find_ff(name):
     p = os.path.join(APP, 'ffmpeg', name + EXE)
     return p if os.path.isfile(p) else (shutil.which(name) if os.name != 'nt' else None)
@@ -263,7 +268,7 @@ def ep_code(fn):
     return safe_name(m.group(1).upper() if m else b)
 def ep_from_link(u):
     fn = safe_name(urllib.parse.unquote(u.rsplit('/', 1)[-1].split('?')[0])); return ep_code(fn), fn
-UA = {'User-Agent': 'Mozilla/5.0 KarazmaStudio/9'}
+UA = {'User-Agent': 'Mozilla/5.0 KarazmaStudio/9.6'}
 def download(url, dest, label, size=None, sha=None):
     if os.path.exists(dest) and (size is None or os.path.getsize(dest) == size) and (sha is None or sha256(dest) == sha): return
     tmp = dest + '.part'
@@ -503,32 +508,56 @@ def fetch_ffmpeg():
             m = next(n for n in z.namelist() if n.lower().endswith('/' + name + EXE) or n.lower() == name + EXE)
             with z.open(m) as i, open(dst + '.tmp', 'wb') as o: shutil.copyfileobj(i, o, 8 << 20)
         os.replace(dst + '.tmp', dst); os.remove(zp); say(f'   {name}{EXE} ready')
-def sync_from_drive():
-    """at start: update app code (v9_app/app_manifest.json) and base files (.assets/assets_manifest.json) from the v9 Drive folder.
-    Never fatal: offline -> keep using the files already here.
-    v9.5: returns True when the program code (v9_app) changed, so the caller can restart."""
+def github_raw_url(rel):
+    """Public raw URL for a file under v9_app/ on the GitHub repo. Repo is public -> no token needed."""
+    rel = rel.replace('\\', '/').lstrip('/')
+    return f'https://raw.githubusercontent.com/{GH_OWNER}/{GH_REPO}/{GH_BRANCH}/{GH_APP_DIR}/{rel}'
+def sync_app_from_github():
+    """v9.6: update operator app files from GitHub (app_manifest.json + listed files). Returns True if code changed."""
     code_changed = False
+    try:
+        mp = os.path.join(APP, 'app_manifest.json.new')
+        download(github_raw_url('app_manifest.json'), mp, 'app_manifest.json')
+        man = load_json(mp, {}) or {}; files = man.get('files') or {}
+        if not files: raise IOError('app_manifest.json has no files list')
+        changed = []
+        for rel, f in files.items():
+            dest = os.path.join(APP, *rel.split('/')); os.makedirs(os.path.dirname(dest) or APP, exist_ok=True)
+            if os.path.exists(dest) and os.path.getsize(dest) == f.get('bytes') and sha256(dest) == f.get('sha256'): continue
+            download(github_raw_url(rel), dest + '.new', rel, f.get('bytes'), f.get('sha256')); changed.append((dest + '.new', dest))
+        for a, b in changed: os.replace(a, b)
+        os.replace(mp, os.path.join(APP, 'app_manifest.json'))
+        if changed:
+            say(f'Updated {len(changed)} file(s) from GitHub ({GH_OWNER}/{GH_REPO}@{GH_BRANCH}/{GH_APP_DIR}, version {man.get("version", "?")}).')
+            code_changed = True
+    except Exception as e:
+        logging.error(traceback.format_exc()); say(f'(could not update app from GitHub: {e}; using the files already on this PC)', 'warning')
+    return code_changed
+def sync_assets_from_drive():
+    """Base renderer assets still live on the v9 Drive folder (.assets). Never fatal."""
     try: items = v9_root()
-    except Exception as e: say(f'(Drive not reachable: {e}; using the files already on this PC)', 'warning'); return False
-    for folder, local, mname in (('v9_app', APP, 'app_manifest.json'), ('.assets', ASSETS, 'assets_manifest.json')):
-        try:
-            if folder not in items: continue
-            tree = drive_tree(items[folder]['id'])
-            if mname not in tree: continue
-            mp = os.path.join(local, mname + '.new'); download(gdl(tree[mname]), mp, mname)
-            man = load_json(mp, {}) or {}; files = man.get('files') or {v['path']: v for v in man.get('assets', {}).values()}; changed = []
-            for rel, f in files.items():
-                dest = os.path.join(local, *rel.split('/')); os.makedirs(os.path.dirname(dest), exist_ok=True)
-                if os.path.exists(dest) and os.path.getsize(dest) == f.get('bytes') and sha256(dest) == f.get('sha256'): continue
-                if rel not in tree: raise IOError(f'{rel} missing in Drive {folder}')
-                download(gdl(tree[rel]), dest + '.new', rel, f.get('bytes'), f.get('sha256')); changed.append((dest + '.new', dest))
-            for a, b in changed: os.replace(a, b)
-            os.replace(mp, os.path.join(local, mname))
-            if changed:
-                say(f'Updated {len(changed)} file(s) from Drive ({folder}, version {man.get("version", "?")}).')
-                if folder == 'v9_app': code_changed = True
-        except Exception as e:
-            logging.error(traceback.format_exc()); say(f'(could not update {folder} from Drive: {e}; using the files already on this PC)', 'warning')
+    except Exception as e: say(f'(Drive not reachable for assets: {e}; using the assets already on this PC)', 'warning'); return
+    folder, local, mname = '.assets', ASSETS, 'assets_manifest.json'
+    try:
+        if folder not in items: return
+        tree = drive_tree(items[folder]['id'])
+        if mname not in tree: return
+        mp = os.path.join(local, mname + '.new'); download(gdl(tree[mname]), mp, mname)
+        man = load_json(mp, {}) or {}; files = man.get('files') or {v['path']: v for v in man.get('assets', {}).values()}; changed = []
+        for rel, f in files.items():
+            dest = os.path.join(local, *rel.split('/')); os.makedirs(os.path.dirname(dest), exist_ok=True)
+            if os.path.exists(dest) and os.path.getsize(dest) == f.get('bytes') and sha256(dest) == f.get('sha256'): continue
+            if rel not in tree: raise IOError(f'{rel} missing in Drive {folder}')
+            download(gdl(tree[rel]), dest + '.new', rel, f.get('bytes'), f.get('sha256')); changed.append((dest + '.new', dest))
+        for a, b in changed: os.replace(a, b)
+        os.replace(mp, os.path.join(local, mname))
+        if changed: say(f'Updated {len(changed)} asset file(s) from Drive (version {man.get("version", "?")}).')
+    except Exception as e:
+        logging.error(traceback.format_exc()); say(f'(could not update assets from Drive: {e}; using the assets already on this PC)', 'warning')
+def sync_from_drive():
+    """v9.6: app code from GitHub; .assets still from Drive. Returns True when program code changed (for auto-restart)."""
+    code_changed = sync_app_from_github()
+    sync_assets_from_drive()
     return code_changed
 def restart_program(args=None):
     """v9.5: relaunch the same python/exe with the same arguments in the same console window, then exit with its code.
@@ -1053,22 +1082,23 @@ def download_menu():
     elif k in ('c', '3'): download_pending()
     return False
 def check_for_update():
-    """v9.3: compare local version with app_manifest.json on the v9 Drive folder, then download changed files."""
-    say(f'Checking for update (this version: {VERSION}) ...')
+    """v9.6: compare local version with app_manifest.json on GitHub (public raw), then download changed app files."""
+    say(f'Checking for update (this version: {VERSION}; source: GitHub {GH_OWNER}/{GH_REPO}@{GH_BRANCH}/{GH_APP_DIR}) ...')
     try:
-        tree = drive_tree(v9_root()['v9_app']['id']); mp = os.path.join(APP, 'app_manifest.check.json')
-        download(gdl(tree['app_manifest.json']), mp, 'app_manifest.json'); remote = str((load_json(mp, {}) or {}).get('version', '?')); os.remove(mp)
+        mp = os.path.join(APP, 'app_manifest.check.json')
+        download(github_raw_url('app_manifest.json'), mp, 'app_manifest.json')
+        remote = str((load_json(mp, {}) or {}).get('version', '?')); os.remove(mp)
     except Exception as e:
         logging.error(traceback.format_exc()); say(f'Could not check for update: {e}', 'warning'); return
     if remote == VERSION: say(f'You have the latest version ({VERSION}). Files will still be verified.')
-    else: say(f'New version on Drive: {remote} (you have {VERSION}). Downloading ...')
+    else: say(f'New version on GitHub: {remote} (you have {VERSION}). Downloading ...')
     if sync_from_drive() or remote != VERSION: restart_program([])
 def menu():
     while True:
         print(f'\n======  KARAZMA STUDIO v{VERSION}  (SOP 2.5)  ======')
         print('   v9.1+: CPU/RAM throttling on (leaves cores free so Windows stays stable)')
         print('   v9.2+: episodes Mosi marks "skip" in the logs are skipped in option 3')
-        print('   v9.3: [5] Check for update  |  v9.5: restarts automatically after an update')
+        print('   v9.6: [5] Check for update from GitHub  |  auto-restart after an update')
         print(' [1] Download a course (host links or Google Drive folder)')
         print(' [2] Transcribe + find claps  ->  one zip for Mosi')
         print(' [3] Edit: apply Mosi\'s logs  ->  Final folder')

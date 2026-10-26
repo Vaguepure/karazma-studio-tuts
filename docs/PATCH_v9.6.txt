@@ -1,0 +1,9 @@
+Karazma Studio v9.6 - updates from GitHub (last dual Drive+GitHub release)
+- App code updates (startup sync and menu [5] Check for update) now pull from the public GitHub repo:
+  https://github.com/Vaguepure/karazma-studio-tuts  (branch main, folder v9_app/)
+  via raw.githubusercontent.com URLs. No GitHub login or token is needed on the Windows PC.
+- This is the LAST release published to both Google Drive and GitHub. Later versions go to GitHub only;
+  once you have 9.6, option [5] / startup sync will fetch them from GitHub.
+- .assets, ffmpeg zips, and Whisper model fallback still use the existing v9 Drive folder.
+- Auto-restart after a code update (from v9.5) is unchanged.
+- UI remains English only.
