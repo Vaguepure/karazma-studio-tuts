@@ -1,0 +1,16 @@
+# Python caches
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Editor and backup copies
+*.bak
+*.bak*
+
+# Runtime logs
+*.log
+logs/
+
+# Large payloads that live with the Windows install / Drive folder, not in git
+models/
+.assets/
