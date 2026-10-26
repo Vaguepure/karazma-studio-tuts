@@ -10,7 +10,7 @@ COURSES = os.path.join(ROOT, 'Courses')
 MODELS = os.path.join(APP, 'models'); ASSETS = os.path.join(APP, 'assets')
 CFG = os.path.join(APP, 'config.json'); LOG = os.path.join(APP, 'karazma-studio.log')
 EXE = '.exe' if os.name == 'nt' else ''
-VERSION = '9.6'
+VERSION = '9.7'
 # v9.4 (Arsha 2026-10-26): cut rules - pause > PAUSE_MAX_S is cut, no kept piece shorter than MIN_KEEP_S
 PAUSE_MAX_S = 1.0
 MIN_KEEP_S = 1.0
@@ -61,7 +61,13 @@ GH_OWNER = 'Vaguepure'
 GH_REPO = 'karazma-studio-tuts'
 GH_BRANCH = 'main'
 GH_APP_DIR = 'v9_app'   # path inside the repo for operator app files
-# v9.6+: app code updates from public GitHub raw URLs (no token). Drive kept for .assets / ffmpeg / models.
+# Hamgit mirror (Iran-first for app code updates). Same layout: v9_app/ on main.
+HM_HOST = 'hamgit.ir'
+HM_OWNER = 'ardavarinia'
+HM_REPO = 'karazma-studio-tuts'
+HM_BRANCH = 'main'
+HM_APP_DIR = 'v9_app'
+# v9.7+: app code updates try Hamgit raw first, then GitHub raw. Drive kept for .assets / ffmpeg / models.
 def find_ff(name):
     p = os.path.join(APP, 'ffmpeg', name + EXE)
     return p if os.path.isfile(p) else (shutil.which(name) if os.name != 'nt' else None)
@@ -512,26 +518,61 @@ def github_raw_url(rel):
     """Public raw URL for a file under v9_app/ on the GitHub repo. Repo is public -> no token needed."""
     rel = rel.replace('\\', '/').lstrip('/')
     return f'https://raw.githubusercontent.com/{GH_OWNER}/{GH_REPO}/{GH_BRANCH}/{GH_APP_DIR}/{rel}'
+def hamgit_raw_url(rel):
+    """Public raw URL for a file under v9_app/ on the Hamgit (GitLab) mirror. Prefer for Iran."""
+    rel = rel.replace('\\', '/').lstrip('/')
+    return f'https://{HM_HOST}/{HM_OWNER}/{HM_REPO}/-/raw/{HM_BRANCH}/{HM_APP_DIR}/{rel}'
+def update_raw_urls(rel):
+    """Ordered update sources: Hamgit first (reachable from Iran), then GitHub raw."""
+    return [('Hamgit', hamgit_raw_url(rel)), ('GitHub', github_raw_url(rel))]
+def download_from_update_sources(rel, dest, label, size=None, sha=None):
+    """Try each update source in order until one succeeds. Returns the winning source label."""
+    errors = []
+    for name, url in update_raw_urls(rel):
+        part = dest + '.part'
+        if os.path.exists(part):
+            try: os.remove(part)
+            except Exception: pass
+        if os.path.exists(dest) and not ((size is None or os.path.getsize(dest) == size) and (sha is None or sha256(dest) == sha)):
+            # force re-download when size/sha do not match existing
+            pass
+        try:
+            # If dest already matches size+sha, download() returns immediately without network.
+            download(url, dest, f'{label} [{name}]', size, sha)
+            return name
+        except Exception as e:
+            errors.append(f'{name}: {e}')
+            say(f'  {name} failed for {label}: {e}', 'warning')
+            if os.path.exists(part):
+                try: os.remove(part)
+                except Exception: pass
+            # Remove a partial/corrupt dest that failed sha so the next source starts clean
+            if os.path.exists(dest) and sha and (size is not None) and not (os.path.getsize(dest) == size and sha256(dest) == sha):
+                try: os.remove(dest)
+                except Exception: pass
+    raise IOError('all update sources failed for ' + label + ' (' + '; '.join(errors) + ')')
 def sync_app_from_github():
-    """v9.6: update operator app files from GitHub (app_manifest.json + listed files). Returns True if code changed."""
+    """v9.7: update operator app files from Hamgit then GitHub (app_manifest.json + listed files). Returns True if code changed."""
     code_changed = False
     try:
         mp = os.path.join(APP, 'app_manifest.json.new')
-        download(github_raw_url('app_manifest.json'), mp, 'app_manifest.json')
+        src_name = download_from_update_sources('app_manifest.json', mp, 'app_manifest.json')
         man = load_json(mp, {}) or {}; files = man.get('files') or {}
         if not files: raise IOError('app_manifest.json has no files list')
-        changed = []
+        changed = []; file_srcs = set([src_name])
         for rel, f in files.items():
             dest = os.path.join(APP, *rel.split('/')); os.makedirs(os.path.dirname(dest) or APP, exist_ok=True)
             if os.path.exists(dest) and os.path.getsize(dest) == f.get('bytes') and sha256(dest) == f.get('sha256'): continue
-            download(github_raw_url(rel), dest + '.new', rel, f.get('bytes'), f.get('sha256')); changed.append((dest + '.new', dest))
+            won = download_from_update_sources(rel, dest + '.new', rel, f.get('bytes'), f.get('sha256'))
+            file_srcs.add(won); changed.append((dest + '.new', dest))
         for a, b in changed: os.replace(a, b)
         os.replace(mp, os.path.join(APP, 'app_manifest.json'))
         if changed:
-            say(f'Updated {len(changed)} file(s) from GitHub ({GH_OWNER}/{GH_REPO}@{GH_BRANCH}/{GH_APP_DIR}, version {man.get("version", "?")}).')
+            which = '+'.join(sorted(file_srcs))
+            say(f'Updated {len(changed)} file(s) from {which} (version {man.get("version", "?")}).')
             code_changed = True
     except Exception as e:
-        logging.error(traceback.format_exc()); say(f'(could not update app from GitHub: {e}; using the files already on this PC)', 'warning')
+        logging.error(traceback.format_exc()); say(f'(could not update app from remotes: {e}; using the files already on this PC)', 'warning')
     return code_changed
 def sync_assets_from_drive():
     """Base renderer assets still live on the v9 Drive folder (.assets). Never fatal."""
@@ -555,7 +596,7 @@ def sync_assets_from_drive():
     except Exception as e:
         logging.error(traceback.format_exc()); say(f'(could not update assets from Drive: {e}; using the assets already on this PC)', 'warning')
 def sync_from_drive():
-    """v9.6: app code from GitHub; .assets still from Drive. Returns True when program code changed (for auto-restart)."""
+    """v9.7: app code from Hamgit then GitHub; .assets still from Drive. Returns True when program code changed (for auto-restart)."""
     code_changed = sync_app_from_github()
     sync_assets_from_drive()
     return code_changed
@@ -1082,23 +1123,21 @@ def download_menu():
     elif k in ('c', '3'): download_pending()
     return False
 def check_for_update():
-    """v9.6: compare local version with app_manifest.json on GitHub (public raw), then download changed app files."""
-    say(f'Checking for update (this version: {VERSION}; source: GitHub {GH_OWNER}/{GH_REPO}@{GH_BRANCH}/{GH_APP_DIR}) ...')
+    """v9.7: compare local version with app_manifest.json (Hamgit first, then GitHub), then download + auto-restart."""
+    say(f'Checking for update (this version: {VERSION}; sources: Hamgit then GitHub) ...')
+    remote = None; src_name = None
     try:
         mp = os.path.join(APP, 'app_manifest.check.json')
-        download(github_raw_url('app_manifest.json'), mp, 'app_manifest.json')
+        src_name = download_from_update_sources('app_manifest.json', mp, 'app_manifest.json')
         remote = str((load_json(mp, {}) or {}).get('version', '?')); os.remove(mp)
     except Exception as e:
         logging.error(traceback.format_exc()); say(f'Could not check for update: {e}', 'warning'); return
-    if remote == VERSION: say(f'You have the latest version ({VERSION}). Files will still be verified.')
-    else: say(f'New version on GitHub: {remote} (you have {VERSION}). Downloading ...')
+    if remote == VERSION: say(f'You have the latest version ({VERSION}) (checked via {src_name}). Files will still be verified.')
+    else: say(f'New version available: {remote} (you have {VERSION}; found via {src_name}). Downloading ...')
     if sync_from_drive() or remote != VERSION: restart_program([])
 def menu():
     while True:
         print(f'\n======  KARAZMA STUDIO v{VERSION}  (SOP 2.5)  ======')
-        print('   v9.1+: CPU/RAM throttling on (leaves cores free so Windows stays stable)')
-        print('   v9.2+: episodes Mosi marks "skip" in the logs are skipped in option 3')
-        print('   v9.6: [5] Check for update from GitHub  |  auto-restart after an update')
         print(' [1] Download a course (host links or Google Drive folder)')
         print(' [2] Transcribe + find claps  ->  one zip for Mosi')
         print(' [3] Edit: apply Mosi\'s logs  ->  Final folder')
