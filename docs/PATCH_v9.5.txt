@@ -1,0 +1,6 @@
+Karazma Studio v9.5 - auto-restart after update
+- When startup sync or [5] Check for update downloads new program code (v9_app), the program restarts itself automatically.
+- How: it relaunches the same python.exe / exe with the same arguments in the same console window (child process), then exits with the child's exit code. No manual close/reopen needed.
+- Loop guard: the restarted process has KARAZMA_RESTARTED=1 and will not auto-restart again; if another update appears it asks for a manual reopen.
+- Asset-only updates (.assets) do not trigger a restart.
+- If relaunch fails, a warning asks to close and reopen manually.

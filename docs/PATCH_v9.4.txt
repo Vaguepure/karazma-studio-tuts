@@ -1,0 +1,6 @@
+Karazma Studio v9.4 (2026-10-26)
+- Pause rule: silence > 1.0 s between words is cut (was ~1.5 s). Stage 1 lists "pause cut" ranges in the -transcribe file.
+- Minimum kept piece: 1.0 s. Stage 2 drops kept pieces shorter than 1 s (warning shown) - no messy back-to-back micro cuts.
+- Sentence cut rules written into the -transcribe file: drop wrong takes (keep last), incomplete sentences, repeats, fillers, unclear words, pauses > 1 s; keep teaching sentences; never cut inside a word.
+- Clap detection and clap-based cut suggestions unchanged.
+- English-only UI (no Persian text in studio9.py).

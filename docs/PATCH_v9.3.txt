@@ -1,0 +1,4 @@
+Karazma Studio v9.3 (2026-10-26)
+- New menu option [5] Check for update: reads app_manifest.json on the v9 Drive folder, compares version, downloads changed files (sha256-verified); restart to use new version.
+- Skip-episode messages are English only (non-English reasons shown as "previously edited").
+- No Persian text in studio9.py (input parsing kept via unicode escapes).
